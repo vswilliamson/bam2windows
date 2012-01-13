@@ -23,7 +23,7 @@
 # Version 0.3
 # created 25/08/2010
 # last update 21/10/2011
-my $version = "0.3.3";
+my $version = "0.3.4";
 
 
 
@@ -44,14 +44,13 @@ parameterCheck(%par);
 
 if (@ARGV == 0 || @ARGV > 2){print $usage; exit}
 if (@ARGV == 1 && !defined($par{'makeTempOnly'})){print $usage; exit}
-# if (@ARGV == 1 && defined($par{'makeTempOnly'}) && 
-#     (!defined($par{'saveTest'}) || !defined($par{'saveControl'})) ){
-#     die ""
-# }
+
+
 my $testFile = shift;
 my $controlFile = shift;
 # load default chromosome length
-my %chrLength = chrLenght($par{'chrFile'});
+# my %chrLength = chrLenght($par{'chrFile'});
+my %chrLength = chrLength($testFile, $controlFile);
 # create filter object
 my $filters_hr = setFilters(%par);
 
@@ -110,6 +109,9 @@ sub parameterCheck {
         if ((!$par{'saveTest'}) && (!$par{'saveControl'}) ){
             die "If --makeTempOnly is present --saveTest and/or --saveControl must be set too";
         }
+    }
+    if ($par{'chrFile'}){
+        warn "Option 'chrFile' is deprecated and not used. sam/bam header is read instead\n";
     }
     return 0;
 }
@@ -360,6 +362,14 @@ sub equaliseAndFill {
     }
 }
 
+sub getHeaderFH {
+    my ($file) = @_;
+    my $fh;
+    my $msg = "Impossible to open $file:";
+    open ($fh, "samtools view -H '$file' |") || die "$msg $!\n";
+    return $fh;
+}
+
 sub getFileHandle {
     my ($file) = @_;
     my $fh;
@@ -539,9 +549,6 @@ Options:
         readNum will not be used. [$pars{'window'}]
     --gc_file. Path to a file with gc content as dowloaded from 
         UCSD. If a file is provided, GC content will be calculated  [$pars{'gc_file'}] 
-    --chrFile. Path to a file with length of each chromosome. If none is specified, 
-        the human hg19 genome is used. The provided file must be tab delimited,
-        chrname, length. [$pars{'chrFile'}]
     --readNum. Average number of reads in a window. Window size will
         be set accordingly. [$pars{'readNum'}]
     --genomeSize. Size of aploid genome. [$pars{'genomeSize'}]
@@ -588,61 +595,71 @@ sub setDefaultPars {
 }
 
 
-sub chrLenght {
-    my ($chrFile) = @_;
-    my %chrL;
-    if ($chrFile){
-        %chrL = custom_chrLength($chrFile);
+sub chrLength {
+    my ($test, $control) = @_;
+    my %chrLtest = getHead($test);
+    my %chrLcontrol = getHead($control);
+    if (hashCompare (\%chrLtest, \%chrLcontrol)){
+        return (%chrLtest);
     } else {
-        %chrL = hg19_chrLenght();
+        die "ERROR: Test and control refer to different reference genomes\n";
     }
-    return %chrL;
 }
 
-sub hg19_chrLenght {
-    my %chrLen = (
-        chr1  =>  249250621,
-        chr2  =>  243199373,
-        chr3  =>  198022430,
-        chr4  =>  191154276,
-        chr5  =>  180915260,
-        chr6  =>  171115067,
-        chr7  =>  159138663,
-        chr8  =>  146364022,
-        chr9  =>  141213431,
-        chr10 =>  135534747,
-        chr11 =>  135006516,
-        chr12 =>  133851895,
-        chr13 =>  115169878,
-        chr14 =>  107349540,
-        chr15 =>  102531392,
-        chr16 =>  90354753,
-        chr17 =>  81195210,
-        chr18 =>  78077248,
-        chr19 =>  59128983,
-        chr20 =>  63025520,
-        chr21 =>  48129895,
-        chr22 =>  51304566,
-        chrX  =>  155270560,
-        chrY  =>  59373566,
-        chrM  =>  16571,
-    );
-    return %chrLen;
+sub hashCompare {
+    my ($first_hr, $second_hr) = @_;
+    if (lessOrEqualHash($first_hr, $second_hr) && lessOrEqualHash($second_hr, $first_hr)){
+        return 1
+    } else {
+        return 0;
+    }
 }
 
-sub custom_chrLength {
-    my ($file) = @_;
-    open (IN, $file) || die "Impossible to open $file: $!";
-    my %chrLen;
-    while(<IN>){
-        if (! /^#/){
-            chomp;
-            my @F = split(/\t/);
-            if ($F[1] !~ /^\d+$/){
-                die "Second column in file $file is not integer numeric\n";
-            }
-            $chrLen{$F[0]} = $F[1];
+sub lessOrEqualHash {
+    my ($small_hr, $large_hr) = @_;
+    foreach my $k (keys(%{$small_hr})){
+        if (!defined($large_hr->{$k})){
+            return 0;
+        } elsif ($small_hr->{$k} ne $large_hr->{$k}){
+            return 0;
         }
     }
-    return 
+    return 1;
 }
+
+sub getHead {
+    my ($file) = @_;
+    my %chrL;
+    if (($file =~ /\.sam$/i) || ($file =~ /\.sam\.gz$/i)){
+        my $fh = getFileHandle($file);
+        while(<$fh>){
+            chomp;
+            my $thisLine = $_;
+            if ($thisLine !~ /^\@/){
+                return (%chrL);
+            } else {
+                addThisChrLength($thisLine, \%chrL);
+            }
+        }    
+    } elsif ($file =~ /\.bam$/i) {
+        my $fh = getHeaderFH($file);
+        while(<$fh>){
+            chomp;
+            my $thisLine = $_;
+            addThisChrLength($thisLine, \%chrL);
+        }
+        return (%chrL);
+    } else {
+        die "File $file is not valid\n";
+    }
+}
+
+sub addThisChrLength {
+    my ($thisLine, $chrL_hr) = @_;
+    if ($thisLine =~ /\@SQ\tSN:(\S+)\tLN:(\d+)/){
+        my $thisChr = $1;
+        my $thisLength = $2;
+        $chrL_hr->{$thisChr} = $2;
+    } 
+}
+
