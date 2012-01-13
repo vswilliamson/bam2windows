@@ -20,9 +20,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# Version 0.3
 # created 25/08/2010
-# last update 21/10/2011
+# last update 13/01/2012
 my $version = "0.3.4";
 
 
@@ -51,6 +50,7 @@ my $controlFile = shift;
 # load default chromosome length
 # my %chrLength = chrLenght($par{'chrFile'});
 my %chrLength = chrLength($testFile, $controlFile);
+addGenomesize(\%par, \%chrLength);
 # create filter object
 my $filters_hr = setFilters(%par);
 
@@ -103,19 +103,16 @@ if ($controlFile){
 
 
 #### SUBS ####
-sub parameterCheck {
-    my %par = @_;
-    if ($par{'makeTempOnly'}){
-        if ((!$par{'saveTest'}) && (!$par{'saveControl'}) ){
-            die "If --makeTempOnly is present --saveTest and/or --saveControl must be set too";
-        }
-    }
-    if ($par{'chrFile'}){
-        warn "Option 'chrFile' is deprecated and not used. sam/bam header is read instead\n";
-    }
-    return 0;
-}
 
+sub addGenomesize {
+    my ($par_hr, $chrL_hr) = @_;
+    my $totSize = 0;
+   
+    foreach (keys %{$chrL_hr}){
+        $totSize += $chrL_hr->{$_};
+    }
+    $par_hr->{'genomeSize'} = $totSize;
+}
 
 sub renameOrDelete {
     my ($file, $saveFile, $tempFile) = @_;
@@ -532,68 +529,6 @@ sub checkSmaller {
     }
 }
 
-sub setUsage {
-    my %pars = @_;
-    my $usage = qq|
-$0 version $version
-
-Copyright (C) 2010 Stefano Berri
-
-Usage: perl $0 [Options] <testFile> <controlFile>
-
-<testFile> Path to bam or (gzipped) sam file of test sample.
-<controlFile> Path to bam or (gzipped) sam file of control sample.
-
-Options:
-    --window: size of window (in bp) to count reads. If this value is provided, 
-        readNum will not be used. [$pars{'window'}]
-    --gc_file. Path to a file with gc content as dowloaded from 
-        UCSD. If a file is provided, GC content will be calculated  [$pars{'gc_file'}] 
-    --readNum. Average number of reads in a window. Window size will
-        be set accordingly. [$pars{'readNum'}]
-    --genomeSize. Size of aploid genome. [$pars{'genomeSize'}]
-    --qualityThreshold: sequences with MAPQ quality lower than qualityThreshold 
-        will not be used (see bwa). Set to 0 for no filtering on quality score [$pars{'qualityThreshold'}]
-    --tmpDir: path to temporary directory used for saving temporary files. [$pars{'tmpDir'}]
-    --saveTest: a valid file name for a temporary file. If provided, the
-        temporary file from the <testFile> will not be deleted and can be re-used
-        with option --testTemp to save computing time [$pars{'saveTest'}]
-    --saveControl: a valid file name for a temporary file. If provided, the
-        temporary file from the <controlFile> will not be deleted and can
-        be re-used with option --testTemp to save computing time. [$pars{'saveTest'}]
-    --makeTempOnly: FLAG. If this flag is present, it only produce the temporary files
-        and then exit. --saveTest and/or --saveControl must be present.
-    --testTemp: FLAG. If this flag is present <testFile> is not a sam/bam
-        but the *test* temporary file created using option --saveTest.
-    --controlTemp:  FLAG. If this flag is present <controlFile> is not a
-        sam/bam but the *control* temporary file created using option --saveControl.
-\n|;
-    return $usage;
-# the following option is removed as not implemented yet.
-# --blackListFile: Path to a tab delimited file with chromosome location
-#             that should not considered. The file has a one line header and then 
-#             tab delimited "chr\tstart\tend". [$pars{'blackListFile'}]
- 
-}
-
-sub setDefaultPars {
-    my %pars = (
-        window => '',
-        readNum => 30,
-        gc_file => '',
-        genomeSize => 3_000_000_000,
-        qualityThreshold => 37,
-        tmpDir => './',
-        testTemp => undef,
-        controlTemp => undef,
-        saveTest => '',
-        saveControl => '',
-        makeTempOnly => undef,
-        chrFile => '',
-    );
-    return %pars;
-}
-
 
 sub chrLength {
     my ($test, $control) = @_;
@@ -662,4 +597,82 @@ sub addThisChrLength {
         $chrL_hr->{$thisChr} = $2;
     } 
 }
+
+sub parameterCheck {
+    my %par = @_;
+    if ($par{'makeTempOnly'}){
+        if ((!$par{'saveTest'}) && (!$par{'saveControl'}) ){
+            die "If --makeTempOnly is present --saveTest and/or --saveControl must be set too";
+        }
+    }
+    if ($par{'chrFile'}){
+        warn "Option 'chrFile' is deprecated and not used. sam/bam header is read instead\n";
+    }
+    if ($par{'genomeSize'}){
+        warn "Option 'genomeSize' is deprecated, the genome size will be calculated from\n" .
+            "sum of chromosome length as describe in sam/bam header"
+    }
+    return 0;
+}
+
+sub setUsage {
+    my %pars = @_;
+    my $usage = qq|
+$0 version $version
+
+Copyright (C) 2010 Stefano Berri
+
+Usage: perl $0 [Options] <testFile> <controlFile>
+
+<testFile> Path to bam or (gzipped) sam file of test sample.
+<controlFile> Path to bam or (gzipped) sam file of control sample.
+
+Options:
+    --window: size of window (in bp) to count reads. If this value is provided, 
+        readNum will not be used. [$pars{'window'}]
+    --gc_file. Path to a file with gc content as dowloaded from 
+        UCSD. If a file is provided, GC content will be calculated  [$pars{'gc_file'}] 
+    --readNum. Average number of reads in a window. Window size will
+        be set accordingly. [$pars{'readNum'}]
+    --qualityThreshold: sequences with MAPQ quality lower than qualityThreshold 
+        will not be used (see bwa). Set to 0 for no filtering on quality score [$pars{'qualityThreshold'}]
+    --tmpDir: path to temporary directory used for saving temporary files. [$pars{'tmpDir'}]
+    --saveTest: a valid file name for a temporary file. If provided, the
+        temporary file from the <testFile> will not be deleted and can be re-used
+        with option --testTemp to save computing time [$pars{'saveTest'}]
+    --saveControl: a valid file name for a temporary file. If provided, the
+        temporary file from the <controlFile> will not be deleted and can
+        be re-used with option --testTemp to save computing time. [$pars{'saveTest'}]
+    --makeTempOnly: FLAG. If this flag is present, it only produce the temporary files
+        and then exit. --saveTest and/or --saveControl must be present.
+    --testTemp: FLAG. If this flag is present <testFile> is not a sam/bam
+        but the *test* temporary file created using option --saveTest.
+    --controlTemp:  FLAG. If this flag is present <controlFile> is not a
+        sam/bam but the *control* temporary file created using option --saveControl.
+    
+    DEPRECATED options
+    --genomeSize. Size of aploid genome. [$pars{'genomeSize'}]
+    --chrFile. This option is now ignored
+\n|;
+    return $usage;
+}
+
+sub setDefaultPars {
+    my %pars = (
+        window => '',
+        readNum => 30,
+        gc_file => '',
+        genomeSize => '',
+        qualityThreshold => 37,
+        tmpDir => './',
+        testTemp => undef,
+        controlTemp => undef,
+        saveTest => '',
+        saveControl => '',
+        makeTempOnly => undef,
+        chrFile => '',
+    );
+    return %pars;
+}
+
 
