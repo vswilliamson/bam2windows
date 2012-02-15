@@ -21,8 +21,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 # created 25/08/2010
-# last update 13/01/2012
-my $version = "0.3.4";
+# last update 15/02/2012
+my $version = "0.3.5";
 
 
 
@@ -41,30 +41,35 @@ GetOptions (\%par, 'window=i', 'gc_file=s', 'readNum=i', 'genomeSize=i',
 
 parameterCheck(%par);
 
-if (@ARGV == 0 || @ARGV > 2){print $usage; exit}
-if (@ARGV == 1 && !defined($par{'makeTempOnly'})){print $usage; exit}
+if (@ARGV == 0 || @ARGV > 2){print $usage; exit 1}
+if (@ARGV == 1 && !defined($par{'makeTempOnly'})){print $usage; exit 2}
 
-
-my $testFile = shift;
-my $controlFile = shift;
-# load default chromosome length
-# my %chrLength = chrLenght($par{'chrFile'});
-my %chrLength = chrLength($testFile, $controlFile);
-addGenomesize(\%par, \%chrLength);
 # create filter object
 my $filters_hr = setFilters(%par);
 
+my $testFile = shift;
 my ($countTestFile, $readNumTest) = sam2simple($testFile, $par{'tmpDir'}, 
-    $par{'testTemp'}, $filters_hr);
+    $par{'testTemp'}, $filters_hr, $par{'saveTest'});
 # exit if (!defined($controlFile) && $par{'makeTempOnly'});
 
+my $controlFile = shift;
+if (!defined($controlFile) && $par{'makeTempOnly'}){
+    # we only wanted to create a temp file from one sample. Fine. Exit
+    exit 0;
+}
+
 my ($countControlFile, $readNumControl) = sam2simple($controlFile, $par{'tmpDir'},
-    $par{'controlTemp'}, $filters_hr) if ($controlFile);
-# exit if ($par{'makeTempOnly'});
+    $par{'controlTemp'}, $filters_hr, $par{'saveControl'});
 
 # if we don't need only the temp files...
 if (!defined($par{'makeTempOnly'})){
-    # how many reads in the smallest of the two files?
+    
+    # load default chromosome length
+    # my %chrLength = chrLenght($par{'chrFile'});
+    my %chrLength = chrLength($testFile, $controlFile, $par{'testTemp'}, $par{'controlTemp'});
+    addGenomesize(\%par, \%chrLength);
+
+# how many reads in the smallest of the two files?
     my $NumReads = min($readNumTest, $readNumControl);
     if (!$par{'window'}) {
         # set window size accordingly
@@ -134,7 +139,7 @@ sub min {
 }
 
 sub sam2simple {
-    my ($file, $dir, $tmpF, $filters_hr) = @_;
+    my ($file, $dir, $tmpF, $filters_hr, $saveFile) = @_;
     my $numOfGoodReads = 0;
     
     if ($tmpF){
@@ -165,18 +170,26 @@ sub sam2simple {
         my ($fileName) = fileparse($file);
         my $fh = getFileHandle($file);
         $dir =~ s/\/$//;
-        my $tmpFile = $dir . "/" . createTmpFileName($fileName);
+        my $tmpFile;
+        if ($saveFile){
+            $tmpFile = $dir . "/" . $saveFile;
+        } else {
+            $tmpFile = $dir . "/" . createTmpFileName($fileName);
+        }
         # warn "creating temporary file $tmpFile...\n";
         open (OUT, ">$tmpFile") || die "Impossible to create temporary file $tmpFile: $!\n";
         # prepare space for pointer. Will be substitute at the end
         print OUT "# 000000000000\n";
         while (<$fh>){
-            next if /^\@/;
-            my @F = split(/\t/);
-            my ($chr, $pos) = line2pos(\@F, $filters_hr);
-            if (defined ($chr)) {
-                print OUT "$chr\t$pos\n";
-                $numOfGoodReads++;
+            if (/^\@.*/){
+                print OUT "#$_"; 
+            } else {
+                my @F = split(/\t/);
+                my ($chr, $pos) = line2pos(\@F, $filters_hr);
+                if (defined ($chr)) {
+                    print OUT "$chr\t$pos\n";
+                    $numOfGoodReads++;
+                }
             }
         }
         my $pos = sprintf("%012d", tell(OUT));
@@ -379,7 +392,7 @@ sub getFileHandle {
         my $samtools = `which samtools`;
         chomp($samtools);
         if ($samtools){
-            open($fh, "samtools view '$file' |") || die "$msg $!\n";
+            open($fh, "samtools view -h '$file' |") || die "$msg $!\n";
         } else {
             die "Trying to open a bam file, but `samtools` is not in \$PATH\n";
         }
@@ -531,9 +544,9 @@ sub checkSmaller {
 
 
 sub chrLength {
-    my ($test, $control) = @_;
-    my %chrLtest = getHead($test);
-    my %chrLcontrol = getHead($control);
+    my ($test, $control, $testTmp, $controlTmp) = @_;
+    my %chrLtest = getHead($test, $testTmp);
+    my %chrLcontrol = getHead($control, $controlTmp);
     if (hashCompare (\%chrLtest, \%chrLcontrol)){
         return (%chrLtest);
     } else {
@@ -563,14 +576,26 @@ sub lessOrEqualHash {
 }
 
 sub getHead {
-    my ($file) = @_;
+    my ($file, $isTmp) = @_;
     my %chrL;
-    if (($file =~ /\.sam$/i) || ($file =~ /\.sam\.gz$/i)){
+    if ($isTmp){
+        my $fh = getFileHandle($file);
+        my $null = <$fh>; # this should always exist in temp file
+        while(defined(my $line = <$fh>) && $null){
+            chomp($line);
+            if ($line =~ /^#(\@SQ.*)/){
+                addThisChrLength($1, \%chrL);
+            } else {
+                $null = 0; # to exit the while loop  
+            }
+        }
+        return (%chrL);
+    } elsif (($file =~ /\.sam$/i) || ($file =~ /\.sam\.gz$/i)){
         my $fh = getFileHandle($file);
         while(<$fh>){
             chomp;
             my $thisLine = $_;
-            if ($thisLine !~ /^\@/){
+            if ($thisLine !~ /^\@SQ/){
                 return (%chrL);
             } else {
                 addThisChrLength($thisLine, \%chrL);
@@ -585,7 +610,7 @@ sub getHead {
         }
         return (%chrL);
     } else {
-        die "File $file is not valid\n";
+        die "File $file is not a valid sam/bam file\n";
     }
 }
 
