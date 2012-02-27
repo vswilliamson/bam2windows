@@ -1,0 +1,7 @@
+27/02/2012, version 0.3.6
+- Added option for sorted sam/bam file: This options decrease running time. 
+    the performance increase is noticable when using previously made temporary files 
+- Found and fixed a little bug that counted reads mapping on the first base of
+  a window in the previous window
+- Added explicit support for short options, more similar to usual UNIX programs
+
