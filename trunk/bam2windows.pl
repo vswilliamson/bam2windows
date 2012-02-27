@@ -21,8 +21,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 # created 25/08/2010
-# last update 15/02/2012
-my $version = "0.3.5";
+# last update 27/02/2012
+my $version = "0.3.6";
 
 
 
@@ -35,9 +35,10 @@ use File::Basename;
 my %par = setDefaultPars();
 my $usage = setUsage(%par);
 
-GetOptions (\%par, 'window=i', 'gc_file=s', 'readNum=i', 'genomeSize=i', 
-    'qualityThreshold=i', 'tmpDir=s', 'testTemp', 'controlTemp', 
-    'makeTempOnly', 'saveTest=s', 'saveControl=s', 'chrFile=s');
+GetOptions (\%par, 'window|w=i', 'gc_file|gc=s', 'readNum|r=i', 'genomeSize=i', 
+    'qualityThreshold|q=i', 'tmpDir|d=s', 'testTemp|tt', 'controlTemp|ct', 'testSorted|ts',
+    'controlSorted|cs', 'makeTempOnly|t', 'saveTest|st=s', 'saveControl|sc=s',
+    'chrFile=s');
 
 parameterCheck(%par);
 
@@ -81,7 +82,7 @@ if (!defined($par{'makeTempOnly'})){
     # produce counts
     warn "Counting reads over window $par{'window'} bp wide...\n";
     my $hr = windowCount($par{'window'}, $countTestFile, $countControlFile, 
-        $filters_hr, \%chrLength);
+        $par{'testSorted'}, $par{'controlSorted'}, \%chrLength);
     
     if ($par{'gc_file'} ne '') {
         warn "  Calculating GC content...\n";
@@ -482,48 +483,61 @@ sub loadBlackList {
     return $hash_r;
 }
 
-sub _wcAdd {
-    my ($what, $count_hr, $fh, $wSize) = @_;
-    # this is a pseudoSub, uses variables from windowCount
+sub wcAdd {
+    my ($what, $count_hr, $fh, $wSize, $sorted) = @_;
+    my $start = 1;
+    my $end = $wSize;
+    my $thisWinCount = 0;
+    my $prevChr = '';
     while (<$fh>){
-        if (! /^\s*#/){
+        if (! /^#/) {
             chomp;
             my ($chr, $pos) = split(/\t/);
-            if (defined ($chr)) {
-                my $start = int($pos/$wSize) * $wSize + 1;
+            if ($sorted){
+                if (($chr eq $prevChr && $pos <= $end) || $prevChr eq ''){ 
+                    $thisWinCount++;
+                } else {
+                    $count_hr->{$what}->{$prevChr}->{$start} = $thisWinCount;
+                    $start = int($pos/$wSize) * $wSize + 1;
+                    $end = $start + $wSize - 1;
+                    $thisWinCount = 1;
+                }
+                $prevChr = $chr;
+            } else { 
+                $start = int(($pos - 1)/$wSize) * $wSize + 1;
                 $count_hr->{$what}->{$chr}->{$start}++;
-#                 if (!defined($max_hr->{$chr}) || $start > $max_hr->{$chr}) {
-#                     $max_hr->{$chr} = $start;
-#                 } 
             }
         }
     }
+    # flush last field
+    if ($sorted){
+        $count_hr->{$what}->{$prevChr}->{$start} = $thisWinCount;
+    }
+}
+
+sub makeEmptyHash {
+    my ($wSize, $max_hr, $what_ar) = @_;
+    my $hr = {};
+    foreach my $chr (keys(%{$max_hr})) {
+        for (my $n = 1; $n < $max_hr->{$chr}; $n = $n + $wSize){
+            foreach my $w (@{$what_ar}){
+                $hr->{$w}->{$chr}->{$n} = 0;
+            }
+        }
+    }
+    return ($hr);
 }
 
 sub windowCount {
-    my ($wSize, $testFile, $controlFile, $filters_hr, $max_hr) = @_;
-    my $count_hr = {};
+    my ($wSize, $testFile, $controlFile, $tSorted, $cSorted, $max_hr) = @_;
+    
+    my $count_hr = makeEmptyHash($wSize, $max_hr, ['test', 'control']);
     my $fh = getFileHandle($testFile);
-    _wcAdd('test', $count_hr, $fh, $wSize);
+    wcAdd('test', $count_hr, $fh, $wSize, $tSorted);
     close $fh;
     $fh = getFileHandle($controlFile);
-    _wcAdd('control', $count_hr, $fh, $wSize);
+    wcAdd('control', $count_hr, $fh, $wSize, $cSorted);
     close $fh;
-    # Now check that all windows are the same in test and control
-    foreach my $chr (keys(%{$count_hr->{'test'}})) {
-        if (!defined($count_hr->{'control'}->{$chr})) {
-            $count_hr->{'control'}->{$chr} = {};
-        }
-
-        for (my $n = 1; $n < $max_hr->{$chr}; $n = $n + $wSize) {
-            if (!defined($count_hr->{'test'}->{$chr}->{$n})) {
-                $count_hr->{'test'}->{$chr}->{$n} = 0;
-            } 
-            if (!defined($count_hr->{'control'}->{$chr}->{$n})) {
-                $count_hr->{'control'}->{$chr}->{$n} = 0;
-            } 
-        }
-    }
     return $count_hr;
 }
 
@@ -653,27 +667,31 @@ Usage: perl $0 [Options] <testFile> <controlFile>
 <controlFile> Path to bam or (gzipped) sam file of control sample.
 
 Options:
-    --window: size of window (in bp) to count reads. If this value is provided, 
+    -w, --window: size of window (in bp) to count reads. If this value is provided, 
         readNum will not be used. [$pars{'window'}]
-    --gc_file. Path to a file with gc content as dowloaded from 
+    -gc, --gc_file. Path to a file with gc content as dowloaded from 
         UCSD. If a file is provided, GC content will be calculated  [$pars{'gc_file'}] 
-    --readNum. Average number of reads in a window. Window size will
+    -r, --readNum. Average number of reads in a window. Window size will
         be set accordingly. [$pars{'readNum'}]
-    --qualityThreshold: sequences with MAPQ quality lower than qualityThreshold 
+    -q, --qualityThreshold: sequences with MAPQ quality lower than qualityThreshold 
         will not be used (see bwa). Set to 0 for no filtering on quality score [$pars{'qualityThreshold'}]
-    --tmpDir: path to temporary directory used for saving temporary files. [$pars{'tmpDir'}]
-    --saveTest: a valid file name for a temporary file. If provided, the
+    -d, --tmpDir: path to temporary directory used for saving temporary files. [$pars{'tmpDir'}]
+    -st, --saveTest: a valid file name for a temporary file. If provided, the
         temporary file from the <testFile> will not be deleted and can be re-used
         with option --testTemp to save computing time [$pars{'saveTest'}]
-    --saveControl: a valid file name for a temporary file. If provided, the
+    -sc, --saveControl: a valid file name for a temporary file. If provided, the
         temporary file from the <controlFile> will not be deleted and can
         be re-used with option --testTemp to save computing time. [$pars{'saveTest'}]
-    --makeTempOnly: FLAG. If this flag is present, it only produce the temporary files
+    -t, --makeTempOnly: FLAG. If this flag is present, it only produce the temporary files
         and then exit. --saveTest and/or --saveControl must be present.
-    --testTemp: FLAG. If this flag is present <testFile> is not a sam/bam
+    -tt, --testTemp: FLAG. If this flag is present <testFile> is not a sam/bam
         but the *test* temporary file created using option --saveTest.
-    --controlTemp:  FLAG. If this flag is present <controlFile> is not a
+    -ct, --controlTemp:  FLAG. If this flag is present <controlFile> is not a
         sam/bam but the *control* temporary file created using option --saveControl.
+    -ts, --testSorted: FLAG. If the test input file is sorted, set this flag to save
+        computational time
+    -cs, --controlSorted: FLAG. If the control input file is sorted, set this flag to save
+        computational time
     
     DEPRECATED options
     --genomeSize. Size of aploid genome. [$pars{'genomeSize'}]
@@ -692,6 +710,8 @@ sub setDefaultPars {
         tmpDir => './',
         testTemp => undef,
         controlTemp => undef,
+        testSorted => undef,
+        controlSorted => undef,
         saveTest => '',
         saveControl => '',
         makeTempOnly => undef,
