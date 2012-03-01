@@ -1,3 +1,6 @@
+01/03/2012, version 0.3.7
+- Added check and error message when the temporary file provided is not valid
+  (does not have the seek position as first line)
 27/02/2012, version 0.3.6
 - Added option for sorted sam/bam file: This options decrease running time. 
     the performance increase is noticable when using previously made temporary files 
