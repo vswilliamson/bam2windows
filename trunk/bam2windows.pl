@@ -21,8 +21,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 # created 25/08/2010
-# last update 27/02/2012
-my $version = "0.3.6";
+# last update 01/03/2012
+my $version = "0.3.7";
 
 
 
@@ -146,8 +146,11 @@ sub sam2simple {
     if ($tmpF){
         open (TMP, $file) || die "Impossible to open temporary file $file\n";
         my $firstLine = <TMP>;
-        $firstLine =~ /^# 0*(\d+)/;
-        seek (TMP, $1, 0);
+        if ($firstLine =~ /^# 0*(\d+)/){
+            seek (TMP, $1, 0);
+        } else {
+            die "file $tmpF is not a valid temporary file"
+        }
         
         my $found = 0;
         while (defined(my $line = <TMP>) && (! $found)){
