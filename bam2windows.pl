@@ -21,8 +21,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 # created 25/08/2010
-# last update 01/03/2012
-my $version = "0.3.7";
+# last update 20/07/2012
+my $version = "0.3.8";
 
 
 
@@ -34,14 +34,16 @@ use File::Basename;
 
 my %par = setDefaultPars();
 my $usage = setUsage(%par);
+my $verboseVersion = setVerboseVersion($version);
 
-GetOptions (\%par, 'window|w=i', 'gc_file|gc=s', 'readNum|r=i', 'genomeSize=i', 
-    'qualityThreshold|q=i', 'tmpDir|d=s', 'testTemp|tt', 'controlTemp|ct', 'testSorted|ts',
-    'controlSorted|cs', 'makeTempOnly|t', 'saveTest|st=s', 'saveControl|sc=s',
-    'chrFile=s');
+GetOptions (\%par, 'version|v', 'window|w=i', 'gc_file|gc=s', 'readNum|r=i',
+    'genomeSize=i', 'qualityThreshold|q=i', 'tmpDir|d=s', 'testTemp|tt',
+    'controlTemp|ct', 'testSorted|ts', 'controlSorted|cs', 'makeTempOnly|t',
+    'saveTest|st=s', 'saveControl|sc=s', 'chrFile=s');
 
 parameterCheck(%par);
 
+if ($par{'version'}){print $verboseVersion; exit 0}
 if (@ARGV == 0 || @ARGV > 2){print $usage; exit 1}
 if (@ARGV == 1 && !defined($par{'makeTempOnly'})){print $usage; exit 2}
 
@@ -657,6 +659,18 @@ sub parameterCheck {
     return 0;
 }
 
+sub setVerboseVersion {
+    my ($version) = @_;
+    my $verboseV = qq|
+bam2windows version $version.
+Copyright (C) 2010 Stefano Berri
+
+This is free software.  You may redistribute copies of it under the terms of
+the GNU General Public License <http://www.gnu.org/licenses/gpl.html>.
+There is NO WARRANTY, to the extent permitted by law.
+|;
+}
+
 sub setUsage {
     my %pars = @_;
     my $usage = qq|
@@ -670,6 +684,7 @@ Usage: perl $0 [Options] <testFile> <controlFile>
 <controlFile> Path to bam or (gzipped) sam file of control sample.
 
 Options:
+    -v, --version: print version and exit (status 0)
     -w, --window: size of window (in bp) to count reads. If this value is provided, 
         readNum will not be used. [$pars{'window'}]
     -gc, --gc_file. Path to a file with gc content as dowloaded from 
