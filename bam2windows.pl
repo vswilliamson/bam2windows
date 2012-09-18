@@ -36,7 +36,7 @@ my %par = setDefaultPars();
 my $usage = setUsage(%par);
 my $verboseVersion = setVerboseVersion($version);
 
-GetOptions (\%par, 'version|v', 'window|w=i', 'gc_file|gc=s', 'readNum|r=i',
+GetOptions (\%par, 'version|v', 'verbose|V', 'window|w=i', 'gc_file|gc=s', 'readNum|r=i',
     'genomeSize=i', 'qualityThreshold|q=i', 'tmpDir|d=s', 'testTemp|tt',
     'controlTemp|ct', 'testSorted|ts', 'controlSorted|cs', 'makeTempOnly|t',
     'saveTest|st=s', 'saveControl|sc=s', 'chrFile=s');
@@ -48,11 +48,14 @@ if (@ARGV == 0 || @ARGV > 2){print $usage; exit 1}
 if (@ARGV == 1 && !defined($par{'makeTempOnly'})){print $usage; exit 2}
 
 # create filter object
+if ($par{'verbose'}){
+    warn "initialiasing filters...\n"
+}
 my $filters_hr = setFilters(%par);
 
 my $testFile = shift;
 my ($countTestFile, $readNumTest) = sam2simple($testFile, $par{'tmpDir'}, 
-    $par{'testTemp'}, $filters_hr, $par{'saveTest'});
+    $par{'testTemp'}, $filters_hr, $par{'saveTest'}, $par{'verbose'});
 # exit if (!defined($controlFile) && $par{'makeTempOnly'});
 
 my $controlFile = shift;
@@ -62,7 +65,7 @@ if (!defined($controlFile) && $par{'makeTempOnly'}){
 }
 
 my ($countControlFile, $readNumControl) = sam2simple($controlFile, $par{'tmpDir'},
-    $par{'controlTemp'}, $filters_hr, $par{'saveControl'});
+    $par{'controlTemp'}, $filters_hr, $par{'saveControl'}, $par{'verbose'});
 
 # if we don't need only the temp files...
 if (!defined($par{'makeTempOnly'})){
@@ -82,31 +85,39 @@ if (!defined($par{'makeTempOnly'})){
 
 
     # produce counts
-    warn "Counting reads over window $par{'window'} bp wide...\n";
+    if($par{'verbose'}) {
+        warn "Counting reads over window $par{'window'} bp wide...\n";
+    }
     my $hr = windowCount($par{'window'}, $countTestFile, $countControlFile, 
-        $par{'testSorted'}, $par{'controlSorted'}, \%chrLength);
+        $par{'testSorted'}, $par{'controlSorted'}, \%chrLength, $par{'verbose'});
     
     if ($par{'gc_file'} ne '') {
-        warn "  Calculating GC content...\n";
+        if ($par{'verbose'}){
+            warn "calculating GC content...\n";
+        }
         addGC_content($hr, $par{'gc_file'}, $par{'window'});        
     }
-    printHash($hr); 
+    printHash($hr, $par{'verbose'}); 
 
 }
 
 
 # rename or delete temporary file
-if (! renameOrDelete($countTestFile, $par{'saveTest'}, $par{'testTemp'})) {
+if (! renameOrDelete($countTestFile, $par{'saveTest'}, 
+    $par{'testTemp'}, $par{'verbose'})) {
     warn "Impossible to rename or delete test temporary file\n";
 }
 
 if ($controlFile){
-    if (! renameOrDelete($countControlFile, $par{'saveControl'}, $par{'controlTemp'})) {
+    if (! renameOrDelete($countControlFile, $par{'saveControl'}, 
+        $par{'controlTemp'}, $par{'verbose'})) {
         warn "Impossible to rename or delete control temporary file\n";
     }
 }
 
-
+if ($par{'verbose'}){
+    warn "Done!\n";
+}
 
 
 
@@ -123,13 +134,16 @@ sub addGenomesize {
 }
 
 sub renameOrDelete {
-    my ($file, $saveFile, $tempFile) = @_;
+    my ($file, $saveFile, $tempFile, $verbose) = @_;
     my $success;
     if ($tempFile){
         $success = 1;
     } elsif ($saveFile ne ''){
         $success = rename $file, $saveFile;
     } else {
+        if ($verbose){
+            warn "removing file $file...\n";
+        }
         $success = unlink ($file);
     }
     return $success;
@@ -142,11 +156,14 @@ sub min {
 }
 
 sub sam2simple {
-    my ($file, $dir, $tmpF, $filters_hr, $saveFile) = @_;
+    my ($file, $dir, $tmpF, $filters_hr, $saveFile, $verbose) = @_;
     my $numOfGoodReads = 0;
     
     if ($tmpF){
         open (TMP, $file) || die "Impossible to open temporary file $file\n";
+        if($verbose){
+            warn "$file is a previously produced temporary file, recovering total numer of reads...\n";
+        }
         my $firstLine = <TMP>;
         if ($firstLine =~ /^# 0*(\d+)/){
             seek (TMP, $1, 0);
@@ -173,6 +190,9 @@ sub sam2simple {
         return ($file, $numOfGoodReads);
     } else {
         
+        if($verbose){
+            warn "$file is a sam/bam file. Converting, filtering and recovering total numer of reads...\n";
+        }
         my ($fileName) = fileparse($file);
         my $fh = getFileHandle($file);
         $dir =~ s/\/$//;
@@ -306,8 +326,10 @@ sub makeOutFileName {
 }
 
 sub printHash {
-    my ($hr) = @_;
-
+    my ($hr, $verbose) = @_;
+    if ($verbose){
+        warn "printing file...\n";
+    }
     print "Chr\tPos\tTest\tNorm";
     print "\tGC" if ($hr->{'gc'}); 
     print "\n";
@@ -534,13 +556,19 @@ sub makeEmptyHash {
 }
 
 sub windowCount {
-    my ($wSize, $testFile, $controlFile, $tSorted, $cSorted, $max_hr) = @_;
+    my ($wSize, $testFile, $controlFile, $tSorted, $cSorted, $max_hr, $verbose) = @_;
     
     my $count_hr = makeEmptyHash($wSize, $max_hr, ['test', 'control']);
     my $fh = getFileHandle($testFile);
+    if ($verbose){
+        warn "  counting reads per window for 'test' file $testFile...\n";
+    }
     wcAdd('test', $count_hr, $fh, $wSize, $tSorted);
     close $fh;
     $fh = getFileHandle($controlFile);
+    if ($verbose){
+        warn "  counting reads per window for 'control' file $controlFile...\n";
+    }
     wcAdd('control', $count_hr, $fh, $wSize, $cSorted);
     close $fh;
     return $count_hr;
@@ -654,7 +682,7 @@ sub parameterCheck {
     }
     if ($par{'genomeSize'}){
         warn "Option 'genomeSize' is deprecated, the genome size will be calculated from\n" .
-            "sum of chromosome length as describe in sam/bam header"
+            "sum of chromosome length as describe in sam/bam header\n";
     }
     return 0;
 }
@@ -684,7 +712,8 @@ Usage: perl $0 [Options] <testFile> <controlFile>
 <controlFile> Path to bam or (gzipped) sam file of control sample.
 
 Options:
-    -v, --version: print version and exit (status 0)
+    -v, --version: FLAG. Print version and exit (status 0)
+    -V, --verbose: FLAB. Warn about progress
     -w, --window: size of window (in bp) to count reads. If this value is provided, 
         readNum will not be used. [$pars{'window'}]
     -gc, --gc_file. Path to a file with gc content as dowloaded from 
@@ -721,6 +750,7 @@ Options:
 sub setDefaultPars {
     my %pars = (
         window => '',
+        verbose => 0,
         readNum => 30,
         gc_file => '',
         genomeSize => '',
