@@ -338,8 +338,16 @@ sub printHash {
         my @s = sort{$a <=> $b} (keys(%{$hr->{'test'}->{$chr}}));
         foreach(@s) {
             print "$chr\t$_";
-            print "\t$hr->{'test'}->{$chr}->{$_}";
-            print "\t$hr->{'control'}->{$chr}->{$_}";
+            if (defined($hr->{'test'}->{$chr}->{$_})){
+                print "\t$hr->{'test'}->{$chr}->{$_}";
+            } else {
+                print "\t0";
+            }
+            if (defined($hr->{'control'}->{$chr}->{$_})){
+                print "\t$hr->{'control'}->{$chr}->{$_}";
+            } else {
+                print "\t0";
+            }
             if (defined ($hr->{'gc'})) {
                 if (defined ($hr->{'gc'}->{$chr}->{$_})) {
                     print "\t$hr->{'gc'}->{$chr}->{$_}";
@@ -546,7 +554,7 @@ sub makeEmptyHash {
     my ($wSize, $max_hr, $what_ar) = @_;
     my $hr = {};
     foreach my $chr (keys(%{$max_hr})) {
-        for (my $n = 1; $n < $max_hr->{$chr}; $n = $n + $wSize){
+        for (my $n = 1; $n <= $max_hr->{$chr}; $n = $n + $wSize){
             foreach my $w (@{$what_ar}){
                 $hr->{$w}->{$chr}->{$n} = 0;
             }
