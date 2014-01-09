@@ -1,5 +1,6 @@
 # Prepare input file for CNAnorm discrete normalization from a pair of sam/bam
-# files. If you use bam format, samtools must be in your $PATH
+# files. If you use bam format, samtools must be in your $PATH or you need to
+# pass its path with --samtools-path
 # Type:
 # perl <nameOfThisScript>
 # to see usage
@@ -36,12 +37,13 @@ my %par = setDefaultPars();
 my $usage = setUsage(%par);
 my $verboseVersion = setVerboseVersion($version);
 
-GetOptions (\%par, 'version|v', 'verbose|V', 'window|w=i', 'gc_file|gc=s', 'readNum|r=i',
-    'genomeSize=i', 'qualityThreshold|q=i', 'tmpDir|d=s', 'testTemp|tt',
-    'controlTemp|ct', 'testSorted|ts', 'controlSorted|cs', 'makeTempOnly|t',
-    'saveTest|st=s', 'saveControl|sc=s', 'chrFile=s');
+GetOptions (\%par, 'version|v', 'verbose|V', 'window|w=i', 'gc_file|gc=s',
+    'samtools-path=s', 'readNum|r=i', 'genomeSize=i', 'qualityThreshold|q=i',
+    'tmpDir|d=s', 'testTemp|tt', 'controlTemp|ct', 'testSorted|ts',
+    'controlSorted|cs', 'makeTempOnly|t', 'saveTest|st=s', 'saveControl|sc=s',
+    'chrFile=s');
 
-parameterCheck(%par);
+%par = parameterCheck(%par);
 
 if ($par{'version'}){print $verboseVersion; exit 0}
 if (@ARGV == 0 || @ARGV > 2){print $usage; exit 1}
@@ -194,7 +196,7 @@ sub sam2simple {
             warn "$file is a sam/bam file. Converting, filtering and recovering total numer of reads...\n";
         }
         my ($fileName) = fileparse($file);
-        my $fh = getFileHandle($file);
+        my $fh = getFileHandle($file, $par{'samtools-path'});
         $dir =~ s/\/$//;
         my $tmpFile;
         if ($saveFile){
@@ -409,15 +411,15 @@ sub equaliseAndFill {
 }
 
 sub getHeaderFH {
-    my ($file) = @_;
+    my ($file, $samtools) = @_;
     my $fh;
     my $msg = "Impossible to open $file:";
-    open ($fh, "samtools view -H '$file' |") || die "$msg $!\n";
+    open ($fh, "$samtools view -H '$file' |") || die "$msg $!\n";
     return $fh;
 }
 
 sub getFileHandle {
-    my ($file) = @_;
+    my ($file, $samtools) = @_;
     my $fh;
     my $msg = "Impossible to open $file:";
     if ($file =~ /\.gz$/) {
@@ -425,13 +427,7 @@ sub getFileHandle {
     } elsif ($file =~ /\.bam$/) {
         # trying to open a bam file
         # first check samtools is in the path
-        my $samtools = `which samtools`;
-        chomp($samtools);
-        if ($samtools){
-            open($fh, "samtools view -h '$file' |") || die "$msg $!\n";
-        } else {
-            die "Trying to open a bam file, but `samtools` is not in \$PATH\n";
-        }
+        open($fh, "$samtools view -h '$file' |") || die "$msg $!\n";
     } else {
         open($fh, $file) || die "$msg $!\n";
     }
@@ -567,13 +563,13 @@ sub windowCount {
     my ($wSize, $testFile, $controlFile, $tSorted, $cSorted, $max_hr, $verbose) = @_;
     
     my $count_hr = makeEmptyHash($wSize, $max_hr, ['test', 'control']);
-    my $fh = getFileHandle($testFile);
+    my $fh = getFileHandle($testFile, $par{'samtools-path'});
     if ($verbose){
         warn "  counting reads per window for 'test' file $testFile...\n";
     }
     wcAdd('test', $count_hr, $fh, $wSize, $tSorted);
     close $fh;
-    $fh = getFileHandle($controlFile);
+    $fh = getFileHandle($controlFile, $par{'samtools-path'});
     if ($verbose){
         warn "  counting reads per window for 'control' file $controlFile...\n";
     }
@@ -634,7 +630,7 @@ sub getHead {
     my ($file, $isTmp) = @_;
     my %chrL;
     if ($isTmp){
-        my $fh = getFileHandle($file);
+        my $fh = getFileHandle($file, $par{'samtools-path'});
         my $null = <$fh>; # this should always exist in temp file
         while(defined(my $line = <$fh>) && $null){
             chomp($line);
@@ -646,7 +642,7 @@ sub getHead {
         }
         return (%chrL);
     } elsif (($file =~ /\.sam$/i) || ($file =~ /\.sam\.gz$/i)){
-        my $fh = getFileHandle($file);
+        my $fh = getFileHandle($file, $par{'samtools-path'});
         while(<$fh>){
             chomp;
             my $thisLine = $_;
@@ -657,7 +653,7 @@ sub getHead {
             }
         }    
     } elsif ($file =~ /\.bam$/i) {
-        my $fh = getHeaderFH($file);
+        my $fh = getHeaderFH($file, $par{'samtools-path'});
         while(<$fh>){
             chomp;
             my $thisLine = $_;
@@ -692,7 +688,24 @@ sub parameterCheck {
         warn "Option 'genomeSize' is deprecated, the genome size will be calculated from\n" .
             "sum of chromosome length as describe in sam/bam header\n";
     }
-    return 0;
+    # check about samtools
+    if ($par{'samtools-path'}){
+        if (! -f $par{'samtools-path'}){
+            die "The specified path to samtools ($par{'samtools-path'}) is not a valid file\n";
+        }
+        if (! -x $par{'samtools-path'}){
+            die "The specified path to samtools ($par{'samtools-path'}) is not executable\n";
+        } 
+    } else { # path was not defined, should be in $PATH
+        my $samtools = `which samtools`;
+        chomp($samtools);
+        if ($samtools){
+            $par{'samtools-path'} = $samtools;
+        } else {
+            die "samtools is not in \$PATH and no alternative was specified with --samtools-path\n";
+        }
+    }
+    return %par;
 }
 
 sub setVerboseVersion {
@@ -726,6 +739,8 @@ Options:
         readNum will not be used. [$pars{'window'}]
     -gc, --gc_file. Path to a file with gc content as dowloaded from 
         UCSD. If a file is provided, GC content will be calculated  [$pars{'gc_file'}] 
+    --samtools-path: Path to samtools. If not defined, it has to be in \$PATH or
+        the program will abort [$pars{'samtools-path'}]
     -r, --readNum. Average number of reads in a window. Window size will
         be set accordingly. [$pars{'readNum'}]
     -q, --qualityThreshold: sequences with MAPQ quality lower than qualityThreshold 
@@ -761,6 +776,7 @@ sub setDefaultPars {
         verbose => 0,
         readNum => 30,
         gc_file => '',
+        'samtools-path' => '', 
         genomeSize => '',
         qualityThreshold => 37,
         tmpDir => './',
