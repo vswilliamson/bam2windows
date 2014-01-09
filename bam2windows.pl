@@ -5,7 +5,7 @@
 # to see usage
 #
 #
-# Copyright (C) 2010 Stefano Berri <s.berri@leeds.ac.uk> or <s.berri@gmail.com>
+# Copyright (C) 2010 Stefano Berri <sberri@illumina.com> or <s.berri@gmail.com>
 # 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,8 +21,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 # created 25/08/2010
-# last update 20/07/2012
-my $version = "0.3.8";
+# last update 09/01/2014
+my $version = "0.3.9";
 
 
 
