@@ -1,3 +1,5 @@
+09/01/2014, version 0.3.8
+- Added option --samtools-path to specify path to samtools
 01/03/2012, version 0.3.7
 - Added check and error message when the temporary file provided is not valid
   (does not have the seek position as first line)
