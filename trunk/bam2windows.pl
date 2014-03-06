@@ -41,11 +41,13 @@ GetOptions (\%par, 'version|v', 'verbose|V', 'window|w=i', 'gc_file|gc=s',
     'samtools-path=s', 'readNum|r=i', 'genomeSize=i', 'qualityThreshold|q=i',
     'tmpDir|d=s', 'testTemp|tt', 'controlTemp|ct', 'testSorted|ts',
     'controlSorted|cs', 'makeTempOnly|t', 'saveTest|st=s', 'saveControl|sc=s',
-    'chrFile=s');
+    'chrFile=s', 'help|h');
+
+if ($par{'version'}){print $verboseVersion; exit 0}
+if ($par{'help'}){print $usage; exit 0}
 
 %par = parameterCheck(%par);
 
-if ($par{'version'}){print $verboseVersion; exit 0}
 if (@ARGV == 0 || @ARGV > 2){print $usage; exit 1}
 if (@ARGV == 1 && !defined($par{'makeTempOnly'})){print $usage; exit 2}
 
@@ -734,7 +736,8 @@ Usage: perl $0 [Options] <testFile> <controlFile>
 
 Options:
     -v, --version: FLAG. Print version and exit (status 0)
-    -V, --verbose: FLAB. Warn about progress
+    -V, --verbose: FLAG. Warn about progress
+    -h, --help: show this help and exit (status 0)
     -w, --window: size of window (in bp) to count reads. If this value is provided, 
         readNum will not be used. [$pars{'window'}]
     -gc, --gc_file. Path to a file with gc content as dowloaded from 
@@ -774,6 +777,7 @@ sub setDefaultPars {
     my %pars = (
         window => '',
         verbose => 0,
+        help => 0,
         readNum => 30,
         gc_file => '',
         'samtools-path' => '', 
