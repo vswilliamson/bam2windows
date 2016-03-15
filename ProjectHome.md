@@ -1,0 +1,2 @@
+This script produces a text file used as input for CNAnorm from a pair of sam/bam files containig DNA sequnces typically from hight throughput sequencing experiments.
+If you use bam files, samtools must be in your $PATH
